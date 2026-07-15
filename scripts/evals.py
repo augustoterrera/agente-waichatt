@@ -21,6 +21,7 @@ class Scenario:
     must_include: tuple[str, ...] = ()
     must_not_include: tuple[str, ...] = ()
     judge: str | None = None
+    max_chars: int | None = None
 
 
 SCENARIOS = (
@@ -29,6 +30,7 @@ SCENARIOS = (
         "cuánto sale waichatt?",
         must_include=(r"180",),
         judge="No ofrece descuentos ni promociones.",
+        max_chars=300,
     ),
     Scenario(
         "descuento",
@@ -65,6 +67,18 @@ SCENARIOS = (
         "demo",
         "puedo ver al bot funcionando?",
         must_include=(r"5[\s-]*22[\s-]*5112",),
+    ),
+    Scenario(
+        "web institucional",
+        "¿cuál es la web de Waichatt para conocer más?",
+        must_include=(r"https://waichatt\.com/?",),
+    ),
+    Scenario(
+        "cuatro sucursales",
+        "Tenemos 4 sucursales y queremos una cuenta con número propio para cada una, ¿cuánto sale?",
+        must_include=(r"160",),
+        must_not_include=(r"USD\s*120|USD\s*80",),
+        judge="Indica USD 160 por mes por cuenta y no revela precios de otros tramos.",
     ),
 )
 
@@ -112,6 +126,8 @@ def main() -> int:
                 for pattern in scenario.must_not_include
                 if re.search(pattern, answer, re.IGNORECASE)
             ]
+            if scenario.max_chars is not None and len(answer) > scenario.max_chars:
+                errors.append(f"tiene {len(answer)} caracteres; máximo {scenario.max_chars}")
             if scenario.judge:
                 verdict = judge_agent.run_sync(
                     f"Criterio: {scenario.judge}\n\nRespuesta:\n{answer}"

@@ -28,6 +28,7 @@ celery_app.conf.update(
         f"{_TASKS}.classify_and_persist_lead": {"queue": "agent_outbound"},
         f"{_TASKS}.retry_stale_processing_jobs": {"queue": "agent_messages"},
         f"{_TASKS}.requeue_stuck_conversation_jobs": {"queue": "agent_messages"},
+        f"{_TASKS}.schedule_due_followups": {"queue": "agent_outbound"},
         f"{_TASKS}.dispatch_pending_outbox_messages": {"queue": "agent_outbound"},
         f"{_TASKS}.cleanup_expired_locks": {"queue": "agent_messages"},
     },
@@ -39,6 +40,10 @@ celery_app.conf.update(
         "dispatch-pending-outbox-messages": {
             "task": f"{_TASKS}.dispatch_pending_outbox_messages",
             "schedule": crontab(minute="*/1"),
+        },
+        "schedule-due-followups": {
+            "task": f"{_TASKS}.schedule_due_followups",
+            "schedule": crontab(minute="*/15", hour="7-21"),
         },
         "requeue-stuck-conversation-jobs": {
             "task": f"{_TASKS}.requeue_stuck_conversation_jobs",
@@ -54,6 +59,7 @@ celery_app.conf.update(
 _SILENCED_ALERTS = {
     f"{_TASKS}.retry_stale_processing_jobs",
     f"{_TASKS}.dispatch_pending_outbox_messages",
+    f"{_TASKS}.schedule_due_followups",
     f"{_TASKS}.requeue_stuck_conversation_jobs",
     f"{_TASKS}.cleanup_expired_locks",
 }

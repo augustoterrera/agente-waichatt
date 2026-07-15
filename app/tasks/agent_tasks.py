@@ -4,7 +4,9 @@ import logging
 import socket
 import time
 from contextlib import contextmanager
+from datetime import datetime
 from typing import Iterator
+from zoneinfo import ZoneInfo
 
 import redis
 from celery import chain
@@ -21,6 +23,18 @@ from app.ycloud import YCloudError, build_ycloud_client
 logger = logging.getLogger(__name__)
 RETRYABLE = (DBError, YCloudError, ChatwootError, AgentError)
 SWEEPER_RETRY = dict(autoretry_for=RETRYABLE, retry_backoff=True, retry_jitter=True, max_retries=3)
+FOLLOWUP_MESSAGE = "Hola!, Quizas se te perdió el mensaje anterior. pudiste verlo?"
+FOLLOWUP_PREFIX = "followup:"
+
+
+def _followup_window_open(now: datetime | None = None) -> bool:
+    timezone = ZoneInfo(settings.celery_timezone)
+    local = now.astimezone(timezone) if now else datetime.now(timezone)
+    return 7 <= local.hour < 22
+
+
+def _is_followup_outbox(outbox: dict) -> bool:
+    return str(outbox.get("idempotency_key") or "").startswith(FOLLOWUP_PREFIX)
 
 
 def _redis() -> redis.Redis:
@@ -167,14 +181,26 @@ def send_outbound_message(self, outbox_id: str) -> dict[str, object]:
     outbox = chat_memory.get_outbox(int(outbox_id))
     if outbox is None:
         return {"ok": False, "outbox_id": outbox_id, "status": "not_found"}
-    if outbox["status"] in ("sent", "failed"):
+    if outbox["status"] in ("sent", "failed", "canceled"):
         if outbox["status"] == "sent":
             _after_successful_send(outbox)
         return {
-            "ok": outbox["status"] == "sent",
+            "ok": outbox["status"] in ("sent", "canceled"),
             "outbox_id": outbox_id,
             "status": f"already_{outbox['status']}",
         }
+    if _is_followup_outbox(outbox):
+        if not settings.followup_enabled:
+            return {"ok": True, "outbox_id": outbox_id, "status": "followup_disabled"}
+        if not _followup_window_open():
+            return {"ok": True, "outbox_id": outbox_id, "status": "quiet_hours"}
+        if not chat_memory.followup_still_due(
+            int(outbox["conversation_id"]),
+            settings.followup_delay_hours,
+            settings.followup_max_age_hours,
+        ):
+            chat_memory.mark_outbox_canceled(int(outbox_id), "conversation no longer eligible")
+            return {"ok": True, "outbox_id": outbox_id, "status": "canceled"}
     if not chat_memory.mark_outbox_processing(int(outbox_id)):
         return {"ok": True, "outbox_id": outbox_id, "status": "already_claimed"}
 
@@ -243,6 +269,15 @@ def send_outbound_message(self, outbox_id: str) -> dict[str, object]:
 
 
 def _after_successful_send(outbox: dict) -> None:
+    if _is_followup_outbox(outbox):
+        chat_memory.add_message(
+            int(outbox["conversation_id"]),
+            "assistant",
+            outbox["content"],
+            external_message_id=outbox["idempotency_key"],
+        )
+        chat_memory.set_conversation_state(int(outbox["conversation_id"]), {"followup_sent": True})
+        return
     if outbox.get("media") or not service.is_handoff_reply(outbox.get("content") or ""):
         return
     conversation = chat_memory.get_conversation(int(outbox["conversation_id"]))
@@ -294,7 +329,11 @@ def classify_and_persist_lead(conversation_id: str) -> dict[str, object]:
         flags=list(result.flags),
         conversation_id=conversation.id,
     )
-    lead_state = {"stage": result.stage, "flags": list(result.flags)}
+    lead_state = {
+        "stage": result.stage,
+        "flags": list(result.flags),
+        "followup_eligible": result.followup_eligible,
+    }
     chat_memory.set_conversation_state(conversation.id, {"lead": lead_state})
     _sync_chatwoot_labels(conversation, result.stage, list(result.flags))
     return {"ok": True, "conversation_id": conversation_id, **lead_state}
@@ -339,10 +378,42 @@ def retry_stale_processing_jobs() -> dict[str, object]:
 
 
 @celery_app.task(
+    name="app.tasks.agent_tasks.schedule_due_followups", queue="agent_outbound", **SWEEPER_RETRY
+)
+def schedule_due_followups() -> dict[str, object]:
+    if not settings.followup_enabled or not _followup_window_open():
+        return {"ok": True, "scheduled": 0}
+    ids = chat_memory.due_followup_conversation_ids(
+        settings.channel,
+        settings.followup_delay_hours,
+        settings.followup_max_age_hours,
+    )
+    scheduled = 0
+    for conversation_id in ids:
+        conversation = chat_memory.get_conversation(conversation_id)
+        outbox = chat_memory.create_outbox(
+            conversation.id,
+            conversation.external_conversation_id,
+            conversation.channel,
+            FOLLOWUP_MESSAGE,
+            f"{FOLLOWUP_PREFIX}{conversation.channel}:{conversation.id}",
+        )
+        if outbox and outbox["status"] in ("pending", "retry"):
+            send_outbound_message.apply_async((str(outbox["id"]),), queue="agent_outbound")
+            scheduled += 1
+    return {"ok": True, "scheduled": scheduled}
+
+
+@celery_app.task(
     name="app.tasks.agent_tasks.dispatch_pending_outbox_messages", queue="agent_outbound", **SWEEPER_RETRY
 )
 def dispatch_pending_outbox_messages() -> dict[str, object]:
-    rows = chat_memory.pending_outbox(settings.channel)
+    rows = [
+        row
+        for row in chat_memory.pending_outbox(settings.channel)
+        if not _is_followup_outbox(row)
+        or (settings.followup_enabled and _followup_window_open())
+    ]
     for row in rows:
         send_outbound_message.apply_async((str(row["id"]),), queue="agent_outbound")
     return {"ok": True, "dispatched": len(rows)}
@@ -369,3 +440,12 @@ def requeue_stuck_conversation_jobs() -> dict[str, object]:
 )
 def cleanup_expired_locks() -> dict[str, object]:
     return {"ok": True, "cleaned": chat_memory.cleanup_expired_locks()}
+
+
+if __name__ == "__main__":
+    timezone = ZoneInfo(settings.celery_timezone)
+    assert _followup_window_open(datetime(2026, 7, 15, 7, 0, tzinfo=timezone))
+    assert _followup_window_open(datetime(2026, 7, 15, 21, 59, tzinfo=timezone))
+    assert not _followup_window_open(datetime(2026, 7, 15, 22, 0, tzinfo=timezone))
+    assert not _followup_window_open(datetime(2026, 7, 15, 6, 59, tzinfo=timezone))
+    print("self-check puro: OK (follow-up window)")

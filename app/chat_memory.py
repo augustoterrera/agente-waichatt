@@ -273,6 +273,13 @@ def mark_outbox_retry_or_failed(outbox_id: int, error: str) -> str:
     return row["status"] if row else "failed"
 
 
+def mark_outbox_canceled(outbox_id: int, reason: str) -> None:
+    db.execute(
+        "update chat_outbox_messages set status = 'canceled', error = %s where id = %s and status in ('pending', 'retry')",
+        (reason[:500], outbox_id),
+    )
+
+
 # ── Locks (segundo lock, en la DB: serializa aunque haya varios workers) ────
 def acquire_lock(channel: str, external_conversation_id: str, lock_seconds: int = 60) -> bool:
     count = db.execute(
@@ -338,6 +345,71 @@ def due_job_conversation_ids(channel: str, limit: int = 100) -> list[int]:
         (channel, max(limit, 1)),
     )
     return [int(r["id"]) for r in rows]
+
+
+def due_followup_conversation_ids(
+    channel: str, delay_hours: int = 12, max_age_hours: int = 24, limit: int = 100
+) -> list[int]:
+    rows = db.fetch_all(
+        """
+        select c.id
+        from chat_conversations c
+        join lateral (
+          select m.role, m.created_at
+          from chat_messages m
+          where m.conversation_id = c.id
+          order by m.created_at desc, m.id desc
+          limit 1
+        ) last_message on true
+        where c.channel = %s
+          and coalesce(c.state #>> '{lead,followup_eligible}', 'false') = 'true'
+          and coalesce(c.state #>> '{lead,stage}', '') not in ('registrado', 'derivado')
+          and coalesce((c.state ->> 'bot_apagado')::boolean, false) = false
+          and last_message.role = 'assistant'
+          and last_message.created_at <= now() - make_interval(hours => %s)
+          and last_message.created_at > now() - make_interval(hours => %s)
+          and exists (
+            select 1 from chat_messages m where m.conversation_id = c.id and m.role = 'user'
+          )
+          and not exists (
+            select 1 from chat_outbox_messages o
+            where o.conversation_id = c.id
+              and o.idempotency_key = concat('followup:', c.channel, ':', c.id)
+          )
+        order by last_message.created_at
+        limit %s
+        """,
+        (channel, max(delay_hours, 1), max(max_age_hours, delay_hours + 1), max(limit, 1)),
+    )
+    return [int(row["id"]) for row in rows]
+
+
+def followup_still_due(conversation_id: int, delay_hours: int = 12, max_age_hours: int = 24) -> bool:
+    return bool(
+        db.fetch_val(
+            """
+            select exists (
+              select 1
+              from chat_conversations c
+              join lateral (
+                select m.role, m.created_at
+                from chat_messages m
+                where m.conversation_id = c.id
+                order by m.created_at desc, m.id desc
+                limit 1
+              ) last_message on true
+              where c.id = %s
+                and coalesce(c.state #>> '{lead,followup_eligible}', 'false') = 'true'
+                and coalesce(c.state #>> '{lead,stage}', '') not in ('registrado', 'derivado')
+                and coalesce((c.state ->> 'bot_apagado')::boolean, false) = false
+                and last_message.role = 'assistant'
+                and last_message.created_at <= now() - make_interval(hours => %s)
+                and last_message.created_at > now() - make_interval(hours => %s)
+            )
+            """,
+            (conversation_id, max(delay_hours, 1), max(max_age_hours, delay_hours + 1)),
+        )
+    )
 
 
 # ── Leads (CRM mínimo para el equipo comercial) ─────────────────────────────
@@ -445,6 +517,24 @@ if __name__ == "__main__":
     assert pending_messages(conv.id) == []
     hist = recent_history(conv.id)
     assert [m.role for m in hist] == ["user", "assistant"]
+
+    set_conversation_state(
+        conv.id,
+        {"lead": {"stage": "calificando", "flags": [], "followup_eligible": True}},
+    )
+    db.execute(
+        "update chat_messages set created_at = now() - interval '14 hours' where conversation_id = %s and role = 'user'",
+        (conv.id,),
+    )
+    db.execute(
+        "update chat_messages set created_at = now() - interval '13 hours' where conversation_id = %s and role = 'assistant'",
+        (conv.id,),
+    )
+    assert conv.id in due_followup_conversation_ids(ch)
+    assert followup_still_due(conv.id)
+    add_message(conv.id, "user", "sigo acá", external_message_id="m2")
+    assert conv.id not in due_followup_conversation_ids(ch)
+    assert not followup_still_due(conv.id)
 
     ob = create_outbox(conv.id, ext, ch, "Hola!", "idem-1")
     assert ob and ob["status"] == "pending"

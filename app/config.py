@@ -63,6 +63,7 @@ class Settings(BaseSettings):
     crm_url: str = "https://www.waichatt.app"
     agenda_url: str = "https://calendar.app.google/TZdc9qpD6w1T4s4K9"
     sitio_url: str = "https://waichatt.com/"
+    instagram_url: str = "https://www.instagram.com/waichatt/"
     demo_phone: str = "+5493815225112"
     humano_phone: str = "+543816814079"
     humano_nombre: str = "Julian"
@@ -83,6 +84,9 @@ class Settings(BaseSettings):
     job_max_retries: int = 5
     outbox_max_retries: int = 5
     stale_processing_minutes: int = 15
+    followup_enabled: bool = True
+    followup_delay_hours: int = 12
+    followup_max_age_hours: int = 24
 
     # Endpoints /admin (pausar/reanudar el bot por conversación). No se rutean públicamente
     # en prod (Traefik solo expone /webhooks); el token protege el acceso interno igual.

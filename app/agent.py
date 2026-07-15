@@ -134,7 +134,13 @@ def _digits(value: str) -> str:
 def allowed_links() -> set[str]:
     from .media_catalog import catalog_urls
 
-    fixed = {settings.registro_url, settings.crm_url, settings.agenda_url, settings.sitio_url}
+    fixed = {
+        settings.registro_url,
+        settings.crm_url,
+        settings.agenda_url,
+        settings.sitio_url,
+        settings.instagram_url,
+    }
     return {_norm_url(u) for u in fixed | catalog_urls()}
 
 
@@ -181,6 +187,9 @@ if __name__ == "__main__":
     # El CRM y la web institucional son destinos oficiales distintos.
     g = guard_output(f"Entrá al CRM en {settings.crm_url} o conocé Waichatt en {settings.sitio_url}")
     assert "waichatt.app" in g and "waichatt.com" in g, g
+
+    g = guard_output(f"Seguinos en Instagram: {settings.instagram_url}")
+    assert "instagram.com/waichatt" in g, g
 
     # Teléfonos oficiales pasan; inventados no.
     g = guard_output(f"Probá la demo: {settings.demo_phone}\n\nO llamá al +54 9 11 5555-0000 (soporte)")
