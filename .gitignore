@@ -1,0 +1,10 @@
+# Secrets: nunca viajan por git. .env.prod se copia al VPS con scp.
+.env
+.env.prod
+
+__pycache__/
+*.pyc
+.ruff_cache/
+.venv/
+*.egg-info/
+.DS_Store

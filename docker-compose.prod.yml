@@ -1,0 +1,41 @@
+# PRODUCCIÓN: webhook público en waichatt.terreraaugusto.com.
+# Este override no incluye Postgres: usa una database propia en `waichatt-postgres`,
+# accesible por la red compartida waichatt-finanzas_default.
+services:
+  api:
+    environment:
+      - CHANNEL=ycloud
+    networks:
+      - default
+      - proxy
+    labels:
+      - "traefik.enable=true"
+      - "traefik.docker.network=waichatt-finanzas_default"
+      # Solo /webhooks es público; /admin y /health quedan internos.
+      - "traefik.http.routers.agente-waichatt.rule=Host(`waichatt.terreraaugusto.com`) && PathPrefix(`/webhooks`)"
+      - "traefik.http.routers.agente-waichatt.entrypoints=websecure"
+      - "traefik.http.routers.agente-waichatt.tls.certresolver=letsencrypt"
+      - "traefik.http.services.agente-waichatt.loadbalancer.server.port=8000"
+  worker_messages:
+    environment:
+      - CHANNEL=ycloud
+    networks:
+      - default
+      - proxy
+  worker_outbound:
+    environment:
+      - CHANNEL=ycloud
+    networks:
+      - default
+      - proxy
+  beat:
+    environment:
+      - CHANNEL=ycloud
+    networks:
+      - default
+      - proxy
+
+networks:
+  proxy:
+    external: true
+    name: waichatt-finanzas_default

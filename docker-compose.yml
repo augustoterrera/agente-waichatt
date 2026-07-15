@@ -1,0 +1,62 @@
+services:
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    volumes:
+      - redis_data:/data
+
+  api:
+    build: .
+    image: ghcr.io/augustoterrera/agente-waichatt:latest
+    restart: unless-stopped
+    env_file: ${ENV_FILE:-.env}
+    environment:
+      - REDIS_URL=redis://redis:6379/0
+      - CELERY_RESULT_BACKEND=redis://redis:6379/1
+    depends_on:
+      - redis
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health', timeout=5)"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+  worker_messages:
+    build: .
+    image: ghcr.io/augustoterrera/agente-waichatt:latest
+    restart: unless-stopped
+    env_file: ${ENV_FILE:-.env}
+    environment:
+      - REDIS_URL=redis://redis:6379/0
+      - CELERY_RESULT_BACKEND=redis://redis:6379/1
+    command: celery -A app.celery_app.celery_app worker -Q agent_messages --concurrency=4 -l info
+    depends_on:
+      - redis
+
+  worker_outbound:
+    build: .
+    image: ghcr.io/augustoterrera/agente-waichatt:latest
+    restart: unless-stopped
+    env_file: ${ENV_FILE:-.env}
+    environment:
+      - REDIS_URL=redis://redis:6379/0
+      - CELERY_RESULT_BACKEND=redis://redis:6379/1
+    command: celery -A app.celery_app.celery_app worker -Q agent_outbound --concurrency=2 -l info
+    depends_on:
+      - redis
+
+  beat:
+    build: .
+    image: ghcr.io/augustoterrera/agente-waichatt:latest
+    restart: unless-stopped
+    env_file: ${ENV_FILE:-.env}
+    environment:
+      - REDIS_URL=redis://redis:6379/0
+      - CELERY_RESULT_BACKEND=redis://redis:6379/1
+    command: celery -A app.celery_app.celery_app beat -l info
+    depends_on:
+      - redis
+
+volumes:
+  redis_data:

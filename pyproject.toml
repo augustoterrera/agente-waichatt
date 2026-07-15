@@ -1,0 +1,29 @@
+[project]
+name = "agente-waichatt"
+version = "0.1.0"
+description = "Agente vendedor de Waichatt por WhatsApp (Chatwoot en desarrollo, YCloud en producción)."
+requires-python = ">=3.11"
+# Majors capeadas: permiten parches/minors pero evitan que un build futuro traiga una major
+# nueva y rompa. Base heredada de agente-ferrepro (pydantic-ai 2.x probada en prod).
+dependencies = [
+    "pydantic>=2.7,<3",
+    "pydantic-settings>=2.3,<3",
+    "pydantic-ai>=2,<3",
+    "openai>=1.60,<3",
+    "fastapi>=0.111,<1",
+    "uvicorn[standard]>=0.30,<1",
+    "celery[redis]>=5.4,<6",
+    "redis>=5,<7",
+    "psycopg[binary,pool]>=3.1,<4",
+    "langfuse>=3,<4",
+]
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["app*"]
+
+[tool.setuptools.package-data]
+app = ["prompts/*.md", "media_catalog.json"]

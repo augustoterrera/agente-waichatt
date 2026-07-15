@@ -1,0 +1,54 @@
+# Desarrollo: Docker Compose carga este override automáticamente.
+services:
+  api:
+    environment:
+      - CHANNEL=chatwoot
+    volumes:
+      - ./app:/app/app
+    depends_on:
+      - postgres
+  worker_messages:
+    environment:
+      - CHANNEL=chatwoot
+    volumes:
+      - ./app:/app/app
+    depends_on:
+      - postgres
+  worker_outbound:
+    environment:
+      - CHANNEL=chatwoot
+    volumes:
+      - ./app:/app/app
+    depends_on:
+      - postgres
+  beat:
+    environment:
+      - CHANNEL=chatwoot
+    volumes:
+      - ./app:/app/app
+    depends_on:
+      - postgres
+
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: waichatt
+      POSTGRES_PASSWORD: waichatt
+      POSTGRES_DB: agente_waichatt
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    # Sin puerto publicado al host. Ejecutá el self-check dentro del contenedor api.
+
+  ngrok:
+    image: ngrok/ngrok:latest
+    restart: unless-stopped
+    profiles: ["tunnel"]
+    command: http api:8000 --log stdout
+    environment:
+      - NGROK_AUTHTOKEN=${NGROK_AUTHTOKEN:-}
+    depends_on:
+      - api
+
+volumes:
+  postgres_data:

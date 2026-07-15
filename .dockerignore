@@ -1,0 +1,8 @@
+.git
+.env
+.env.prod
+__pycache__
+*.pyc
+.ruff_cache
+.venv
+.DS_Store
