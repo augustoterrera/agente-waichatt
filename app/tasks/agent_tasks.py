@@ -316,7 +316,12 @@ def _after_successful_send(outbox: dict) -> None:
 )
 def classify_and_persist_lead(conversation_id: str) -> dict[str, object]:
     conversation = chat_memory.get_conversation(int(conversation_id))
-    result = classify(chat_memory.recent_history(conversation.id, settings.history_limit))
+    history = chat_memory.recent_history(conversation.id, settings.history_limit)
+    if not history:
+        # Sin historial no hay nada que clasificar, y el upsert recrearía el lead que
+        # /reset acaba de borrar (el turno del comando encadena esta task igual).
+        return {"ok": True, "conversation_id": conversation_id, "status": "sin_historial"}
+    result = classify(history)
     contact = (conversation.state or {}).get("contact") or {}
     chat_memory.upsert_lead(
         service.lead_phone(conversation),

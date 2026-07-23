@@ -1,6 +1,8 @@
 # Secrets: nunca viajan por git. .env.prod se copia al VPS con scp.
+# El patrón amplio cubre los backups .env.bak-* que dejan los cambios de configuración.
 .env
-.env.prod
+.env.*
+!.env.example
 
 # Documentación interna: no viaja por git (arquitectura, infra del VPS y operación).
 # Se comparte por fuera del repo. app/prompts/waichatt.md NO va acá: el Dockerfile lo

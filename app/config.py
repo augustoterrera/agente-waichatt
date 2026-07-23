@@ -29,7 +29,7 @@ class Settings(BaseSettings):
     langfuse_public_key: str | None = None
     langfuse_secret_key: str | None = None
     langfuse_host: str = "https://us.cloud.langfuse.com"
-    langfuse_prompt_name: str = "agente-vendedor-waichatt"
+    langfuse_prompt_name: str = "waichatt-prompt"
     langfuse_prompt_label: str = "production"
     langfuse_prompt_cache_seconds: int = 60
 
