@@ -167,6 +167,21 @@ def process_pending_conversation_messages(conversation_id: int) -> list[int]:
         _finish(conversation, "skipped")
         return []
 
+    if is_reset_command(content):
+        chat_memory.reset_conversation_memory(conversation.id, lead_phone(conversation))
+        outbox = chat_memory.create_outbox(
+            conversation.id,
+            conversation.external_conversation_id,
+            conversation.channel,
+            RESET_REPLY,
+            outbox_idempotency_key(
+                conversation.external_conversation_id, message_ids, RESET_REPLY, conversation.channel
+            ),
+        )
+        _finish(conversation, "completed")
+        logger.info("conversation_reset", extra={"conversation_id": conversation_id})
+        return [int(outbox["id"])] if outbox else []
+
     contact = (conversation.state or {}).get("contact") or {}
     try:
         chat_memory.upsert_lead(
@@ -251,6 +266,16 @@ def _finish(conversation: chat_memory.Conversation, job_status: str) -> None:
     chat_memory.update_events(conversation.channel, conversation.external_conversation_id, "completed")
 
 
+_RESET_COMMANDS = {"/reset", "/reiniciar", "/borrar", "reiniciar chat", "borrar memoria"}
+RESET_REPLY = "Listo, borré nuestra conversación. Escribime lo que quieras y arrancamos de cero."
+
+
+def is_reset_command(content: str) -> bool:
+    """Comando de prueba para el equipo: deja la conversación en blanco desde el chat mismo.
+    Solo se habilita con RESET_COMMAND_ENABLED (dev); en prod un lead real podría escribirlo."""
+    return settings.reset_command_enabled and content.strip().lower() in _RESET_COMMANDS
+
+
 def _contact_context(contact: dict[str, Any]) -> str | None:
     parts: list[str] = []
     if contact.get("name"):
@@ -310,4 +335,9 @@ if __name__ == "__main__":
     assert is_handoff_reply(f"Hablá con {settings.humano_nombre}: +54 381 681 4079")
     assert not is_handoff_reply("El plan cuesta USD 180 por mes")
     assert _contact_context({"name": "Ana", "referral_headline": "Automatizá tu inmobiliaria"})
+    settings.reset_command_enabled = True
+    assert is_reset_command("/reset") and is_reset_command("  /Reset  ")
+    assert is_reset_command("borrar memoria") and not is_reset_command("quiero borrar memoria")
+    settings.reset_command_enabled = False
+    assert not is_reset_command("/reset")
     print("self-check puro: OK (service)")

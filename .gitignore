@@ -2,6 +2,17 @@
 .env
 .env.prod
 
+# Documentación interna: no viaja por git (arquitectura, infra del VPS y operación).
+# Se comparte por fuera del repo. app/prompts/waichatt.md NO va acá: el Dockerfile lo
+# copia dentro de la imagen y es el fallback cuando Langfuse no responde.
+/MAPA.md
+/DESPLIEGUE.md
+/FLUJO.md
+/ROADMAP.md
+/README.md
+/AGENTS.md
+/CLAUDE.md
+
 __pycache__/
 *.pyc
 .ruff_cache/

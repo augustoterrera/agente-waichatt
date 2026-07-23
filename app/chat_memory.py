@@ -144,6 +144,19 @@ def bot_paused(conversation: Conversation) -> bool:
     return bool((conversation.state or {}).get("bot_apagado"))
 
 
+def reset_conversation_memory(conversation_id: int, phone: str) -> None:
+    """Deja la conversación como si el contacto escribiera por primera vez: borra historial
+    (incluido el propio comando), lead y clasificación. NO borra la fila de
+    chat_conversations: la cascada se llevaría el job de webhook que está corriendo."""
+    db.execute("delete from chat_messages where conversation_id = %s", (conversation_id,))
+    db.execute("delete from crm_leads where conversation_id = %s or phone = %s", (conversation_id, phone))
+    # Conserva el contacto (nombre, referral); descarta pausa y última clasificación.
+    db.execute(
+        "update chat_conversations set state = jsonb_build_object('contact', coalesce(state->'contact', '{}'::jsonb)) where id = %s",
+        (conversation_id,),
+    )
+
+
 # ── Mensajes ────────────────────────────────────────────────────────────────
 def add_message(
     conversation_id: int,

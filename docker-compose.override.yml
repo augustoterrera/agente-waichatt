@@ -3,6 +3,8 @@ services:
   api:
     environment:
       - CHANNEL=chatwoot
+      # Deja que el equipo escriba /reset en el chat para probar desde cero.
+      - RESET_COMMAND_ENABLED=true
     volumes:
       - ./app:/app/app
     depends_on:
@@ -10,6 +12,8 @@ services:
   worker_messages:
     environment:
       - CHANNEL=chatwoot
+      # Deja que el equipo escriba /reset en el chat para probar desde cero.
+      - RESET_COMMAND_ENABLED=true
     volumes:
       - ./app:/app/app
     depends_on:
@@ -17,6 +21,8 @@ services:
   worker_outbound:
     environment:
       - CHANNEL=chatwoot
+      # Deja que el equipo escriba /reset en el chat para probar desde cero.
+      - RESET_COMMAND_ENABLED=true
     volumes:
       - ./app:/app/app
     depends_on:
@@ -24,6 +30,8 @@ services:
   beat:
     environment:
       - CHANNEL=chatwoot
+      # Deja que el equipo escriba /reset en el chat para probar desde cero.
+      - RESET_COMMAND_ENABLED=true
     volumes:
       - ./app:/app/app
     depends_on:

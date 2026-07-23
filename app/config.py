@@ -88,6 +88,10 @@ class Settings(BaseSettings):
     followup_delay_hours: int = 12
     followup_max_age_hours: int = 24
 
+    # Comando /reset en el chat: borra historial y lead de esa conversación para volver a
+    # probar desde cero. Solo para desarrollo: en prod un lead real podría escribirlo.
+    reset_command_enabled: bool = False
+
     # Endpoints /admin (pausar/reanudar el bot por conversación). No se rutean públicamente
     # en prod (Traefik solo expone /webhooks); el token protege el acceso interno igual.
     admin_token: str | None = None
